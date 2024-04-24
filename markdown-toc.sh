@@ -3,13 +3,7 @@
 # code blocks starting/ending with ``` are excluded from formatting
 
 # Global variables
-SRC_FILE_ORIGINAL=${1:?No file was specified as first argument}
-SRC_FILE_CLEAN="$(mktemp)"
-TOC_FILE="$(mktemp)"
-# TOC_LINE_COUNT=0
 INDENT_SPACING=''
-declare -a LINE_NO_ARY # array to hold line numbers of header in source file
-declare -a TOC_ARY     # array to hold "#" headers
 
 # Functions
 
@@ -75,17 +69,19 @@ count_top_level_headers() {
     echo "$counter"
 }
 
+# extend string with  a a single character
 extend_string_with() {
     original_string="$1"
     max_length="$2"
     repeat_pattern="$3"
     local result
     local len
+    local divisor=4
 
     result=$original_string
     while [ ${#result} -lt "$max_length" ]; do
         len=${#result}
-        if [ $((len % 2)) -eq 0 ]; then
+        if [ $((len % divisor)) -eq 0 ]; then
             result+=$repeat_pattern
         else
             result+=' '
@@ -93,30 +89,6 @@ extend_string_with() {
     done
     echo "$result"
 }
-
-# add_number_to_array() {
-#     # Check if at least two parameters are provided
-#     if [ "$#" -lt 2 ]; then
-#         echo "Usage: add_number_to_array <array> <number>"
-#         return 1
-#     fi
-#
-#     # Extract array and number from parameters
-#     array=("${!1}") # Using indirect reference to get the array
-#     number="$2"
-#
-#     # Loop through the array and add the number to each element
-#     for ((i = 0; i < ${#array[@]}; i++)); do
-#         ((array[i] += number))
-#     done
-# }
-
-# adjust_TOC_line_references() {
-#     # count TOC lines to establlish a relative reference to lines following TOC
-#     TOC_LINE_COUNT=$(count_lines "$TOC_FILE")
-#     echo "TOC line count: $TOC_LINE_COUNT"
-#     add_number_to_array TOC "$TOC_LINE_COUNT"
-# }
 
 # Remove current toc from file by reading whole file and echoing lines that are not toc
 clean_file_of_toc() {
@@ -167,11 +139,11 @@ build_toc_array() {
 
         # Handle code blocks
         if [[ "${line}" =~ $code_block_regx ]]; then
-            echo "Begin code block"
+            # echo "Begin code block"
             # Ignore lines until we see code block ending
             code_block_status=$((code_block_status + 1))
             if [[ "${code_block_status}" -eq 2 ]]; then # We hit the closing code block
-                echo "End code block"
+                # echo "End code block"
                 code_block_status=0
             fi
             continue
@@ -204,18 +176,17 @@ build_toc_file() {
     local extra_toc_lines=4 # lines written to toc_file in addition to '#' lines
     #               one more line will be added for each main '# ' header line
 
-    echo "=build_toc_file()"
     local TOC_size=${#TOC_ARY[@]}
-    echo ".. TOC_size: $TOC_size"
+    printf "%s\n" "-> TOC header count: $TOC_size"
     local TOC_MAIN_HEADERS_COUNT
     TOC_MAIN_HEADERS_COUNT=$(count_top_level_headers "${TOC_ARY[@]}")
 
-    echo ".. Base:  TOC extra lines: $extra_toc_lines"
-    echo ".. Add:   TOC main header count: $TOC_MAIN_HEADERS_COUNT"
+    # echo ".. Base:  TOC extra lines: $extra_toc_lines"
+    # echo ".. Add:   TOC main header count: $TOC_MAIN_HEADERS_COUNT"
     extra_toc_lines=$(sum "$extra_toc_lines" "$TOC_MAIN_HEADERS_COUNT")
-    echo ".. Total: TOC extra lines: $extra_toc_lines"
+    # echo ".. Total: TOC extra lines: $extra_toc_lines"
     TOC_size=$(sum "$TOC_size" "$extra_toc_lines")
-    echo ".. size of TOC: $TOC_size"
+    # echo ".. size of TOC: $TOC_size"
 
     echo -e "<!--toc:start-->" >>"$OUT_FILE"
     echo -e "\`\`\`" >>"$OUT_FILE" # to protect TOC against reformatting
@@ -233,7 +204,6 @@ build_toc_file() {
         '####'*) set_indent_spacing $((factor * 3)) "$CHR" ;;
         '###'*) set_indent_spacing $((factor * 2)) "$CHR" ;;
         '##'*) set_indent_spacing $((factor * 1)) "$CHR" ;;
-        # '#'*) set_indent_spacing $((factor * 0)) "$CHR" ;;
         '#'*)
             if [ "$line_idx" -ne 1 ]; then
                 echo >>"$OUT_FILE" # echo extra separator line for top-level headers
@@ -263,7 +233,19 @@ build_toc_file() {
 # 3. Extend 'toc_file' by concatenating 'clean file'
 # 4. Write final version of 'toc-file' to original source file (replace contents)
 #
-main() {
+main1() {
+    SRC_FILE_ORIGINAL=$1
+    SRC_FILE_CLEAN="$(mktemp)"
+    TOC_FILE="$(mktemp)"
+    declare -a LINE_NO_ARY=() # array to hold line numbers of header in source file
+    declare -a TOC_ARY=()     # array to hold "#" headers
+
+    printf "%-50s" "Processing file: $SRC_FILE_ORIGINAL  "
+    if ! [ -f "$SRC_FILE_ORIGINAL" ]; then
+        echo "Not a file"
+        return 1
+    fi
+
     # remove TOC from current file
     clean_file_of_toc "$SRC_FILE_ORIGINAL" "$SRC_FILE_CLEAN"
 
@@ -281,6 +263,33 @@ main() {
 
     # rewrite final production back to orginal source file.
     cat "$TOC_FILE" >"$SRC_FILE_ORIGINAL"
+
+    # cleanup
+    rm "$SRC_FILE_CLEAN"
+    rm "$TOC_FILE"
+    LINE_NO_ARY=()
+    TOC_ARY=()
 }
 
-main
+main() {
+
+    # verify the number of arguments
+    if [ "$#" -lt 1 ]; then
+        echo "No arguments supplied"
+        echo "Usage  $ md_toc [file1 ...]"
+        exit 1
+    fi
+
+    for arg in "$@"; do
+        if [ "$arg" = "-h" ] || [ "$arg" = "--help" ]; then
+            echo "Usage  $ md_toc [file1 ...]"
+            exit 0
+        fi
+    done
+
+    for arg in "$@"; do
+        main1 "$arg"
+    done
+}
+
+main "$@"
